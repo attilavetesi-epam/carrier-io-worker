@@ -105,6 +105,30 @@ def patched_paramiko_client_SSHClient_auth(original_auth):  # pylint: disable=C0
     return patched_function
 
 
+def patched_paramiko_client_SSHClient_init(original_init):  # pylint: disable=C0103
+    def patched_init(self, *args, **kwargs):
+        retval = original_init(self, *args, **kwargs)
+
+        ssl_cert_file = os.environ.get("SSL_CERT_FILE")
+        if ssl_cert_file:
+            self.load_system_host_keys(filename=ssl_cert_file)
+
+        return retval
+
+    return patched_init
+
+
+def patched_dulwich_client_HttpGitClient_from_parsedurl(original_from_parsedurl):  # pylint: disable=C0103
+    def patched_from_parsedurl(self, *args, config=None, **kwargs):
+        ssl_cert_file = os.environ.get("SSL_CERT_FILE")
+        if ssl_cert_file and config:
+            config.set(b"http", b"sslCAInfo", ssl_cert_file)
+
+        return original_from_parsedurl(self, *args, config=config, **kwargs)
+
+    return patched_from_parsedurl
+
+
 #
 # Tasklet
 #
@@ -181,6 +205,7 @@ class Tasklet:
         # git.apply_patches()
         #
         import getpass
+        import dulwich
         from dulwich import repo, client  # pylint: disable=E0401
         from dulwich.contrib.paramiko_vendor import ParamikoSSHVendor  # pylint: disable=E0401
         import paramiko  # pylint: disable=E0401
@@ -198,6 +223,8 @@ class Tasklet:
         paramiko.transport.Transport._verify_key = git.patched_paramiko_transport_verify_key  # pylint: disable=W0212
         # Patch paramiko to support direct pkey usage
         paramiko.client.SSHClient._auth = patched_paramiko_client_SSHClient_auth(paramiko.client.SSHClient._auth)  # pylint: disable=C0301,W0212
+        paramiko.client.SSHClient.__init__ = patched_paramiko_client_SSHClient_init(paramiko.client.SSHClient.__init__)  # pylint: disable=C0301,W0212
+        dulwich.client.HttpGitClient.from_parsedurl = patched_dulwich_client_HttpGitClient_from_parsedurl(dulwich.client.HttpGitClient.from_parsedurl)  # pylint: disable=C0301,W0212
         #
         # Update run state
         #
